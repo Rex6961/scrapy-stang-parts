@@ -1,28 +1,23 @@
+import os
+import sys
+from dotenv import load_dotenv
+
 import scrapy
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from ..items import StangPartsItem  # Assuming this is your custom item class
-import re
+from ..items import StangPartsItem
+from ..itemsloaders import StangPartsLoader# Assuming this is your custom item class
 
-# Create a new Excel workbook and set up the worksheet
-wb = Workbook()
-ws = wb.active
-ws.append(['title', 'price', 'references', 'availability'])
+load_dotenv()
 
-# Style the header row for better readability
-fill = PatternFill(start_color='0070c1', end_color='0000CCFF', fill_type='solid')
-ft = Font(bold=True, size=14, name='Comic Sans MS')
-for row in ws["A1:D1"]:
-    for cell in row:
-        cell.fill = fill
-        cell.font = ft
+urls = os.getenv('URLS')
+domain = os.getenv('DOMAINS')
+
 
 class StangPartsSpider(scrapy.Spider):
     """
     Web scraper for Stang Parts website to extract product information
     and save it to an Excel file.
 
-    This spider crawls the Stang Parts website (https://stang-parts.de/en/)
+    This spider crawls the Stang Parts website (https://your_example.com)
     and extracts details like title, price, reference number, and availability
     for each car part listed on a product page. It then saves this data
     to an Excel file named "Supplies_for_a_car.xlsx".
@@ -35,24 +30,10 @@ class StangPartsSpider(scrapy.Spider):
     """
 
     name = "stang_parts"
-    allowed_domains = ["stang-parts.de"]
+    allowed_domains = [domain]
     start_urls = [
-        "https://stang-parts.de/en/2-strona-glowna",  # Starting URL for the crawl
+        urls,  # Starting URL for the crawl
     ]
-
-    def save_to_excel(self, data):
-        """
-        Saves the extracted data to an Excel file.
-
-        Args:
-            data (dict): Dictionary containing the extracted product information.
-        """
-
-        lstsup = []
-        for v in data.values():
-            lstsup.append(v)
-        ws.append(lstsup)
-        wb.save("Supplies_for_a_car.xlsx")
 
     def parse(self, response):
         """
@@ -70,28 +51,14 @@ class StangPartsSpider(scrapy.Spider):
 
         for item in response.css('article.product-miniature.js-product-miniature'):
             # Extract product information from CSS selectors
-            titles = item.css("h3.h3.product-title a::text").get()
-            prices = item.css("span.price::text").get()
-            references = item.css("p.pl_reference strong::text").get()
-            availabilities = item.css("span.pl-availability::text")[1].get()
+            product_items = StangPartsLoader(item=StangPartsItem(), selector=item)
+            product_items.add_css('title', "h3.h3.product-title a::text")
+            product_items.add_css('price', "span.price::text")
+            product_items.add_css('reference', "p.pl_reference strong::text")
+            product_items.add_css('availability', "span.pl-availability::text")
+            yield product_items.load_item()
 
-            # Clean availability text using regular expression
-            availabilities = re.findall('^\s+(.+)\s+$', availabilities)[0]
+        # Follow pagination links and other relevant links for further crawling
 
-            # Create a dictionary to store the extracted data
-            data = {
-                'titles': titles,
-                'prices': prices,
-                'references': references,
-                'availabilities': availabilities,
-            }
-
-            # Yield the extracted data for later processing (e.g., saving)
-            yield data
-
-            # Follow pagination links and other relevant links for further crawling
-            for href in response.css("ul.clearfix a::attr(href)"):
-                yield response.follow(href, callback=self.parse)
-
-        # Save data after processing all products on the current page
-        self.save_to_excel(data)
+        for href in response.css("h5 a.subcategory-name::attr(href)").getall():
+            yield response.follow(url=href, callback=self.parse)

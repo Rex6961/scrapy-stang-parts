@@ -115,6 +115,7 @@ env.bak/
 venv.bak/
 .idea/
 Scripts/
+stang_parts/Supplies_for_a_car.xlsx
 
 # Spyder project settings
 .spyderproject
